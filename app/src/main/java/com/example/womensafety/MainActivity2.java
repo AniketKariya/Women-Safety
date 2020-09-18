@@ -45,8 +45,11 @@ import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
 import com.google.firebase.iid.FirebaseInstanceId;
 import com.google.firebase.iid.InstanceIdResult;
 
@@ -55,6 +58,7 @@ import org.json.JSONObject;
 
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -63,13 +67,17 @@ import java.util.TimeZone;
 public class MainActivity2 extends AppCompatActivity {
 
     ImageView profilePic;
-    TextView name, email, location, lastUpdated;
+    TextView name, email, location, lastUpdated, info;
     Button help, signout;
     FirebaseUser user;
 
     final private String FCM_API = "https://fcm.googleapis.com/fcm/send";
     final private String serverKey = "key=" + "AAAAuxdD75U:APA91bFiDIKYfMdbRSLMhnAhfs_S2U9Tat-JXuuJW-rpufOiXZRFaC7tnw1w-v122tb6xLMUTRx8p_YGP9Qw18VcHpJ56PQtjNBTo7gat5fOIZSEdPjGn807LEil3W0Dc8nv6RxJYcGt";
     final private String contentType = "application/json";
+
+    Location lastKnowLoc;
+    static final String ASKFORHELP = "ASK FOR HELP";
+    static final String STOP = "DON'T NEED ANYMORE";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -84,6 +92,9 @@ public class MainActivity2 extends AppCompatActivity {
         signout = findViewById(R.id.btn_signout);
         location = findViewById(R.id.tv_location);
         lastUpdated = findViewById(R.id.lastUpdated);
+        info = findViewById(R.id.info);
+
+        help.setText(ASKFORHELP);
 
         // display user info
         user = FirebaseAuth.getInstance().getCurrentUser();
@@ -97,6 +108,14 @@ public class MainActivity2 extends AppCompatActivity {
             Glide.with(this).load(String.valueOf(personPic)).into(profilePic);
         }
 
+        info.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                Intent intent = new Intent(MainActivity2.this, MainActivity4.class);
+                startActivity(intent);
+            }
+        });
+
         // utilities
         help.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -109,6 +128,20 @@ public class MainActivity2 extends AppCompatActivity {
 
                 JSONObject notification = new JSONObject();
                 JSONObject notificationBody = new JSONObject();
+
+                DatabaseReference DBuserInfo;
+                DBuserInfo = FirebaseDatabase.getInstance().getReference();
+
+                UserInfo userInfo = new UserInfo(user.getEmail(), lastKnowLoc.getLatitude(), lastKnowLoc.getLongitude(), lastKnowLoc.getTime());
+                if (lastKnowLoc != null && help.getText().equals(ASKFORHELP)) {
+                    info.setText("ASKING FOR HELP. SENDING BROADCASTS.");
+                    DBuserInfo.child("needhelp").child(user.getUid()).setValue(userInfo);
+                    help.setText(STOP);
+                } else if (help.getText().equals(STOP)) {
+                    info.setText("Listening for help.");
+                    DBuserInfo.child("needhelp").child(user.getUid()).removeValue();
+                    help.setText(ASKFORHELP);
+                }
 
                 try {
                     notificationBody.put("title", notificationTitle);
@@ -173,7 +206,7 @@ public class MainActivity2 extends AppCompatActivity {
             @Override
             public void onReceive(Context context, Intent intent) {
                 Bundle b = intent.getBundleExtra("Location");
-                Location lastKnowLoc = (Location) b.getParcelable("Location");
+                lastKnowLoc = (Location) b.getParcelable("Location");
                 if (lastKnowLoc != null) {
                     Date date = new Date(lastKnowLoc.getTime());
                     DateFormat format = new SimpleDateFormat("dd-MM-yyyy HH:mm");
@@ -188,9 +221,45 @@ public class MainActivity2 extends AppCompatActivity {
 
                     String id = DBuserInfo.push().getKey();
                     UserInfo userInfo = new UserInfo(user.getEmail(), lastKnowLoc.getLatitude(), lastKnowLoc.getLongitude(), lastKnowLoc.getTime());
-                    DBuserInfo.child(user.getUid()).setValue(userInfo);
-                } else {
-                    Toast.makeText(context, "Location null", Toast.LENGTH_SHORT).show();
+                    DBuserInfo.child("users").child(user.getUid()).setValue(userInfo);
+
+                    if (help.getText().equals(STOP)) {
+                        info.setText("ASKING FOR HELP. SENDING BROADCASTS.");
+                    } else {
+                        DBuserInfo.child("needhelp").addListenerForSingleValueEvent(
+                                new ValueEventListener() {
+                                    @Override
+                                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                                        Map<String, Object> users = ((Map<String, Object>) snapshot.getValue());
+                                        // log tokens
+                                        // Log.i("Users", users.keySet().toString());
+                                        // iterate through each user, ignoring their UID
+                                        if (users != null && !users.isEmpty()) {
+//                                        for (Map.Entry<String, Object> entry : users.entrySet()) {
+//                                            //Get user map
+//                                            Map singleUser = (Map) entry.getValue();
+//                                            Toast.makeText(MainActivity2.this, singleUser.get("email").toString(), Toast.LENGTH_SHORT).show();
+//                                        }
+                                            info.setText("Someone needs help! Click here");
+//                                            info.setOnClickListener(new View.OnClickListener() {
+//                                                @Override
+//                                                public void onClick(View view) {
+//                                                    Intent intent = new Intent(MainActivity2.this, MainActivity3.class);
+//                                                    startActivity(intent);
+//                                                    finish();
+//                                                }
+//                                            });
+                                        } else {
+                                            info.setText("Nobody's in need");
+                                        }
+                                    }
+
+                                    @Override
+                                    public void onCancelled(@NonNull DatabaseError error) {
+                                        Toast.makeText(MainActivity2.this, "Something went wrong", Toast.LENGTH_SHORT).show();
+                                    }
+                                });
+                    }
                 }
             }
         };

@@ -5,6 +5,10 @@ public class UserInfo {
     double latitude, longitude;
     long lastUpdated;
 
+    UserInfo() {
+
+    }
+
     public UserInfo(String email, double latitude, double longitude, long lastUpdated) {
         this.email = email;
         this.latitude = latitude;
